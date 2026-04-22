@@ -1,1039 +1,136 @@
-import { useState, useEffect, useRef } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Strategy OS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    body { font-family: 'DM Sans', sans-serif; background:#0B1520; }
+    .serif { font-family: 'Cormorant Garamond', serif; }
+  </style>
+</head>
 
-/* ─────────────────────────────────────────────
-   CONSTANTS — Brand & Business Strategist niche
-──────────────────────────────────────────────── */
-const PILLARS = [
-  { id:"decode",    label:"The Decode",    short:"Decode",    pct:30, goal:"Awareness",  col:"#C9A96E", icon:"🔍" },
-  { id:"blueprint", label:"The Blueprint", short:"Blueprint", pct:25, goal:"Authority",  col:"#7B9E87", icon:"📐" },
-  { id:"boldtake",  label:"The Bold Take", short:"Bold Take", pct:20, goal:"Reach",      col:"#C47A5A", icon:"⚡" },
-  { id:"mirror",    label:"The Mirror",    short:"Mirror",    pct:15, goal:"Trust",      col:"#6B8FC4", icon:"🪞" },
-  { id:"human",     label:"The Human",     short:"Human",     pct:10, goal:"Connection", col:"#A47BC4", icon:"🌿" },
-];
+<body class="text-[#E8E0D0]">
 
-const FORMATS = ["Reel","Carousel","Single Post","Story","Caption Only"];
-const STATUSES = ["Idea","Draft","Scheduled","Posted"];
+<div class="flex min-h-screen">
 
-const METRICS_DEF = [
-  { key:"posts",    label:"Posts / Week",      target:3,  unit:"",  icon:"📝" },
-  { key:"stories",  label:"Stories / Day",      target:5,  unit:"",  icon:"📲" },
-  { key:"saveRate", label:"Save Rate",          target:3,  unit:"%", icon:"🔖" },
-  { key:"dms",      label:"DMs / Week",         target:10, unit:"",  icon:"💬" },
-  { key:"leads",    label:"Leads / Week",       target:2,  unit:"",  icon:"🎯" },
-  { key:"bookings", label:"Bookings / Month",   target:1,  unit:"",  icon:"📅" },
-  { key:"reach",    label:"Reel Reach",         target:500,unit:"",  icon:"📡" },
-  { key:"follows",  label:"New Followers / Wk", target:20, unit:"",  icon:"➕" },
-];
-
-const TODAY = new Date().toISOString().split("T")[0];
-function getWeekKey() {
-  const d = new Date(), y = d.getFullYear();
-  const start = new Date(y, 0, 1);
-  const wk = Math.ceil((((d - start) / 86400000) + start.getDay() + 1) / 7);
-  return `${y}-W${String(wk).padStart(2,"0")}`;
-}
-function getPrevWeeks(n) {
-  return Array.from({length:n},(_,i)=>{
-    const d=new Date(); d.setDate(d.getDate()-i*7);
-    const y=d.getFullYear(), start=new Date(y,0,1);
-    const wk=Math.ceil((((d-start)/86400000)+start.getDay()+1)/7);
-    return `${y}-W${String(wk).padStart(2,"0")}`;
-  }).reverse();
-}
-
-/* ─── Storage ─── */
-async function sget(k,fb){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):fb;}catch{return fb;}}
-async function sset(k,v){try{await window.storage.set(k,JSON.stringify(v));}catch{}}
-
-/* ─── Claude API ─── */
-async function claude(prompt){
-  const r=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
-      messages:[{role:"user",content:prompt}]})
-  });
-  const d=await r.json();
-  return d.content?.map(b=>b.text||"").join("")||"";
-}
-
-/* ─── Tiny Icon SVG ─── */
-function Ico({d,size=16,stroke="#C9A96E"}){
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke}
-    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",flexShrink:0}}>
-    {d.split("|").map((p,i)=><path key={i} d={p}/>)}
-  </svg>;
-}
-const ICONS={
-  research:"M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
-  captions:"M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z",
-  metrics:"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-  notion:"M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z|M8 8h8|M8 12h8|M8 16h5",
-  spark:"M13 10V3L4 14h7v7l9-11h-7z",
-  plus:"M12 4v16m8-8H4",
-  trash:"M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
-  copy:"M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z",
-  check:"M5 13l4 4L19 7",
-  star:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
-  edit:"M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-  link:"M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71|M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71",
-  x:"M18 6L6 18|M6 6l12 12",
-  download:"M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4",
-  eye:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z|M12 9a3 3 0 100 6 3 3 0 000-6z",
-  arrowup:"M5 15l7-7 7 7",
-};
-
-/* ═══════════════════════════════════════════════
-   ROOT
-═══════════════════════════════════════════════ */
-export default function App() {
-  const [tab, setTab]         = useState("research");
-  const [ideas, setIdeas]     = useState([]);
-  const [captions, setCaptions] = useState([]);
-  const [metrics, setMetrics] = useState({});
-  const [notionCfg, setNotionCfg] = useState({ url:"", label:"", embedPage:"" });
-  const [ready, setReady]     = useState(false);
-
-  useEffect(()=>{
-    (async()=>{
-      const [i,c,m,n] = await Promise.all([
-        sget("bb_ideas",[]), sget("bb_captions",[]),
-        sget("bb_metrics",{}), sget("bb_notion",{url:"",label:"",embedPage:""}),
-      ]);
-      setIdeas(i); setCaptions(c); setMetrics(m); setNotionCfg(n);
-      setReady(true);
-    })();
-  },[]);
-
-  useEffect(()=>{ if(ready) sset("bb_ideas",ideas); },[ideas,ready]);
-  useEffect(()=>{ if(ready) sset("bb_captions",captions); },[captions,ready]);
-  useEffect(()=>{ if(ready) sset("bb_metrics",metrics); },[metrics,ready]);
-  useEffect(()=>{ if(ready) sset("bb_notion",notionCfg); },[notionCfg,ready]);
-
-  if(!ready) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#0B1520",flexDirection:"column",gap:16}}>
-      <div style={{width:40,height:40,borderRadius:"50%",border:"2px solid #C9A96E30",borderTop:"2px solid #C9A96E",animation:"spin .8s linear infinite"}}/>
-      <p style={{color:"#C9A96E60",fontFamily:"Georgia,serif",fontSize:13}}>Loading your strategy OS…</p>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  );
-
-  const TABS=[
-    {id:"research", label:"AI Research",    icon:"research"},
-    {id:"captions", label:"Caption Library",icon:"captions"},
-    {id:"metrics",  label:"Growth Metrics", icon:"metrics"},
-    {id:"notion",   label:"Notion",         icon:"notion"},
-  ];
-
-  return (
-    <div style={css.shell}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:#0B1520;}
-        input,select,textarea{font-family:'DM Sans',sans-serif;}
-        button:hover{opacity:.85;}
-        ::-webkit-scrollbar{width:4px;}
-        ::-webkit-scrollbar-track{background:#0B1520;}
-        ::-webkit-scrollbar-thumb{background:#1E2E40;border-radius:4px;}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
-        .card-hover:hover{border-color:#C9A96E30!important;transform:translateY(-1px);transition:all .2s;}
-      `}</style>
-
-      {/* ── Sidebar ── */}
-      <aside style={css.sidebar}>
-        {/* Logo */}
-        <div style={css.logoBlock}>
-          <div style={css.logoMark}>
-            <span style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:"#0B1520"}}>B</span>
-          </div>
-          <div>
-            <div style={css.logoName}>Strategy OS</div>
-            <div style={css.logoSub}>Brand &amp; Business</div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav style={{display:"flex",flexDirection:"column",gap:4,padding:"0 12px"}}>
-          {TABS.map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
-              style={{...css.navBtn,...(tab===t.id?css.navActive:{})}}>
-              <Ico d={ICONS[t.icon]} size={14} stroke={tab===t.id?"#C9A96E":"#4A6070"}/>
-              <span>{t.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        {/* Pillar legend */}
-        <div style={css.pillarLegend}>
-          <div style={css.sectionLabel}>Content Pillars</div>
-          {PILLARS.map(p=>(
-            <div key={p.id} style={css.legendRow}>
-              <span style={{...css.legendDot,background:p.col}}/>
-              <span style={css.legendName}>{p.short}</span>
-              <span style={{...css.legendPct,color:p.col}}>{p.pct}%</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Quick Notion link */}
-        {notionCfg.url && (
-          <div style={{padding:"12px 16px",borderTop:"1px solid #1A2A3A"}}>
-            <a href={notionCfg.url} target="_blank" rel="noreferrer" style={css.notionQuickLink}>
-              <Ico d={ICONS.notion} size={13} stroke="#C9A96E"/>
-              <span>Open Notion Board</span>
-            </a>
-          </div>
-        )}
-      </aside>
-
-      {/* ── Main ── */}
-      <main style={css.main}>
-        {tab==="research" && <ResearchTab ideas={ideas} setIdeas={setIdeas} captions={captions} setCaptions={setCaptions}/>}
-        {tab==="captions" && <CaptionsTab captions={captions} setCaptions={setCaptions}/>}
-        {tab==="metrics"  && <MetricsTab metrics={metrics} setMetrics={setMetrics}/>}
-        {tab==="notion"   && <NotionTab cfg={notionCfg} setCfg={setNotionCfg}/>}
-      </main>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   TAB 1 — AI RESEARCH
-═══════════════════════════════════════════════ */
-function ResearchTab({ideas,setIdeas,captions,setCaptions}){
-  const [loading,setLoading] = useState(false);
-  const [pillarFilter,setPillarFilter] = useState("all");
-  const [formatFilter,setFormatFilter] = useState("all");
-  const [expanded,setExpanded] = useState(null);
-  const [genCaption,setGenCaption] = useState(null);
-  const [copied,setCopied] = useState(null);
-  const [topic,setTopic] = useState("");
-
-  async function generate(){
-    setLoading(true);
-    const topicLine = topic ? `Focus especially on this angle: "${topic}".` : "";
-    const prompt=`You are a senior content strategist for a Brand & Business Strategist who helps founders with brand positioning, brand architecture, messaging clarity, and premium pricing strategy.
-
-Generate 12 highly specific, scroll-stopping content ideas for Instagram. ${topicLine}
-
-Distribute across these pillars:
-- decode (4 ideas): Publicly diagnose brand problems ideal clients silently live with. Make them feel "how does she know?"
-- blueprint (3 ideas): Packaged IP, named frameworks, step-by-step methodologies that build authority and command premium pricing.
-- boldtake (2 ideas): Contrarian opinions on branding, positioning, or business strategy. Things that get shared because they challenge conventional wisdom.
-- mirror (2 ideas): Case study angles, client transformation stories, before/after brand positioning results.
-- human (1 idea): Behind-the-strategy content — personal process, the thinking behind the work, what it's really like to be a brand strategist.
-
-For EACH idea return:
-- pillar: one of [decode, blueprint, boldtake, mirror, human]
-- format: one of [Reel, Carousel, Single Post, Story]
-- hook: The exact first line (under 12 words, scroll-stopping, no clickbait)
-- angles: array of 3 specific content talking points
-- captionOpener: First 2 sentences of the caption
-- hashtags: array of 5 relevant hashtags (no #)
-- difficulty: "Easy" | "Medium" | "Deep"
-
-Return ONLY a valid JSON array. No markdown, no explanation, no extra text. Example format:
-[{"pillar":"decode","format":"Reel","hook":"...","angles":["...","...","..."],"captionOpener":"...","hashtags":["..."],"difficulty":"Medium"}]`;
-
-    try{
-      const raw=await claude(prompt);
-      const clean=raw.replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(clean);
-      const stamped=parsed.map((item,i)=>({...item,id:Date.now()+i,date:TODAY,saved:false}));
-      setIdeas(prev=>[...stamped,...prev]);
-    }catch(e){console.error(e);}
-    setLoading(false);
-  }
-
-  async function generateCaptionForIdea(idea){
-    setGenCaption(idea.id);
-    const p=PILLARS.find(p=>p.id===idea.pillar);
-    const prompt=`Write a complete Instagram caption for a Brand & Business Strategist.
-
-Pillar: ${p?.label} — Goal: ${p?.goal}
-Format: ${idea.format}
-Hook: ${idea.hook}
-Key angles to cover: ${idea.angles?.join(", ")}
-
-Requirements:
-- Open with the hook line as the very first sentence
-- 3-4 short punchy paragraphs (2-3 sentences each)
-- Write like a strategist who's been in the room, not a content creator performing expertise
-- No generic phrases like "in today's digital landscape"
-- Specific, direct, occasionally provocative
-- End with a CTA that feels like a natural next step (not salesy)
-- Total length: 200-280 words
-- Include line breaks between paragraphs
-
-Return ONLY the caption text. No labels, no formatting marks.`;
-    const cap=await claude(prompt);
-    // Save to caption library
-    setCaptions(prev=>[{
-      id:Date.now(), title:idea.hook, pillar:idea.pillar,
-      format:idea.format, caption:cap,
-      hashtags:idea.hashtags||[], status:"Draft", date:TODAY,
-      fromResearch:true
-    },...prev]);
-    setGenCaption(null);
-  }
-
-  function copyHook(hook,id){
-    navigator.clipboard.writeText(hook).catch(()=>{});
-    setCopied(id); setTimeout(()=>setCopied(null),1800);
-  }
-
-  function deleteIdea(id){ setIdeas(prev=>prev.filter(i=>i.id!==id)); }
-  function toggleSave(id){ setIdeas(prev=>prev.map(i=>i.id===id?{...i,saved:!i.saved}:i)); }
-
-  const filtered = ideas.filter(i=>
-    (pillarFilter==="all" || i.pillar===pillarFilter) &&
-    (formatFilter==="all" || i.format===formatFilter)
-  );
-  const saved = ideas.filter(i=>i.saved);
-
-  return(
-    <div style={css.page}>
-      {/* Header */}
-      <div style={css.pageTop}>
-        <div>
-          <div style={css.eyebrow}>AI-Powered · Brand &amp; Business Strategist</div>
-          <h1 style={css.h1}>Content <em style={{color:"#C9A96E",fontStyle:"italic"}}>Research Lab</em></h1>
-          <p style={css.pageDesc}>Claude researches niche-specific angles and organises them into your 5 pillars — ready to turn into posts.</p>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
-          <div style={{display:"flex",gap:8}}>
-            <input
-              style={{...css.input,width:220,fontSize:12,padding:"8px 12px"}}
-              placeholder="Topic focus (optional)…"
-              value={topic} onChange={e=>setTopic(e.target.value)}
-            />
-            <button onClick={generate} disabled={loading} style={css.goldBtn}>
-              {loading
-                ? <span style={css.spinner}/>
-                : <Ico d={ICONS.spark} size={14} stroke="#0B1520"/>}
-              {loading?"Researching…":"Generate 12 Ideas"}
-            </button>
-          </div>
-          <div style={{fontSize:11,color:"#3A5060"}}>
-            {ideas.length} ideas total · {saved.length} saved
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:22}}>
-        <span style={css.filterLabel}>Pillar:</span>
-        {["all",...PILLARS.map(p=>p.id)].map(f=>{
-          const p=PILLARS.find(x=>x.id===f);
-          return(
-            <button key={f} onClick={()=>setPillarFilter(f)}
-              style={{...css.chip,...(pillarFilter===f?{background:p?.col||"#C9A96E",color:"#0B1520",borderColor:"transparent"}:{})}}>
-              {p?`${p.icon} ${p.short}`:"All"}
-            </button>
-          );
-        })}
-        <span style={{...css.filterLabel,marginLeft:12}}>Format:</span>
-        {["all",...FORMATS.slice(0,4)].map(f=>(
-          <button key={f} onClick={()=>setFormatFilter(f)}
-            style={{...css.chip,...(formatFilter===f?{background:"#C9A96E",color:"#0B1520",borderColor:"transparent"}:{})}}>
-            {f==="all"?"All":f}
-          </button>
-        ))}
-      </div>
-
-      {/* Loading shimmer */}
-      {loading && (
-        <div style={css.shimmerGrid}>
-          {[1,2,3,4,5,6].map(i=>(
-            <div key={i} style={css.shimmerCard}>
-              <div style={{...css.shimmerLine,width:"60%",marginBottom:12}}/>
-              <div style={{...css.shimmerLine,width:"90%",marginBottom:6}}/>
-              <div style={{...css.shimmerLine,width:"75%"}}/>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Grid */}
-      {!loading && filtered.length===0 && (
-        <div style={css.emptyState}>
-          <div style={{fontSize:40,marginBottom:12}}>🔍</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:18,color:"#C9A96E",marginBottom:8}}>No ideas yet</div>
-          <p style={{color:"#3A5060",fontSize:13,maxWidth:340,lineHeight:1.6}}>Hit "Generate 12 Ideas" and Claude will research your niche and return scroll-stopping hooks sorted by your 5 pillars.</p>
-        </div>
-      )}
-
-      <div style={css.ideaGrid}>
-        {filtered.map(idea=>{
-          const p=PILLARS.find(x=>x.id===idea.pillar);
-          const isOpen=expanded===idea.id;
-          return(
-            <div key={idea.id} className="card-hover"
-              style={{...css.ideaCard,borderTopColor:p?.col||"#C9A96E"}}>
-              {/* Top row */}
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-                <span style={{...css.pillarTag,background:p?.col+"22",color:p?.col}}>
-                  {p?.icon} {p?.short}
-                </span>
-                <span style={css.fmtTag}>{idea.format}</span>
-                <span style={{...css.diffTag,...diffStyle(idea.difficulty)}}>{idea.difficulty}</span>
-                <div style={{marginLeft:"auto",display:"flex",gap:6}}>
-                  <button onClick={()=>toggleSave(idea.id)}
-                    style={{...css.iconBtn,color:idea.saved?"#C9A96E":"#2A4050"}}>
-                    <Ico d={ICONS.star} size={12} stroke={idea.saved?"#C9A96E":"#2A4050"}/>
-                  </button>
-                  <button onClick={()=>copyHook(idea.hook,idea.id)}
-                    style={{...css.iconBtn,color:copied===idea.id?"#7B9E87":"#2A4050"}}>
-                    <Ico d={copied===idea.id?ICONS.check:ICONS.copy} size={12} stroke={copied===idea.id?"#7B9E87":"#2A4050"}/>
-                  </button>
-                  <button onClick={()=>deleteIdea(idea.id)} style={{...css.iconBtn,color:"#5A2A2A"}}>
-                    <Ico d={ICONS.trash} size={12} stroke="#5A2A2A"/>
-                  </button>
-                </div>
-              </div>
-
-              {/* Hook */}
-              <div style={css.hookText}>"{idea.hook}"</div>
-
-              {/* Expand toggle */}
-              <button onClick={()=>setExpanded(isOpen?null:idea.id)} style={css.expandToggle}>
-                {isOpen?"Hide details ↑":"See angles + caption ↓"}
-              </button>
-
-              {/* Expanded */}
-              {isOpen && (
-                <div style={{...css.expandBody,animation:"fadeIn .2s ease"}}>
-                  <div style={css.expandSection}>
-                    <div style={css.sectionLabel}>Talking Points</div>
-                    {idea.angles?.map((a,i)=>(
-                      <div key={i} style={css.angleRow}>
-                        <span style={{color:p?.col,marginRight:8,fontSize:13}}>→</span>
-                        <span style={{fontSize:12.5,color:"#8A9AA8",lineHeight:1.5}}>{a}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={css.expandSection}>
-                    <div style={css.sectionLabel}>Caption Opener</div>
-                    <div style={css.captionOpenerBox}>"{idea.captionOpener}"</div>
-                  </div>
-                  {idea.hashtags?.length>0 && (
-                    <div style={css.expandSection}>
-                      <div style={css.sectionLabel}>Hashtags</div>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                        {idea.hashtags.map((h,i)=>(
-                          <span key={i} style={css.hashTag}>#{h}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <button onClick={()=>generateCaptionForIdea(idea)}
-                    disabled={genCaption===idea.id}
-                    style={{...css.goldBtn,fontSize:12,padding:"7px 14px",marginTop:4}}>
-                    {genCaption===idea.id
-                      ? <><span style={css.spinner}/> Writing caption…</>
-                      : <><Ico d={ICONS.spark} size={12} stroke="#0B1520"/> Generate Full Caption</>}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+  <!-- SIDEBAR -->
+  <aside class="w-60 bg-[#0C1A28] border-r border-[#1A2A3A] p-4 flex flex-col">
+    
+    <div class="flex items-center gap-3 mb-6">
+      <div class="w-10 h-10 rounded-full bg-[#C9A96E] flex items-center justify-center text-black font-bold">B</div>
+      <div>
+        <div class="text-sm font-semibold text-[#C0B090]">Strategy OS</div>
+        <div class="text-xs text-gray-500">Brand & Business</div>
       </div>
     </div>
-  );
+
+    <nav class="flex flex-col gap-2">
+      <button onclick="switchTab('research')" class="tab-btn">AI Research</button>
+      <button onclick="switchTab('captions')" class="tab-btn">Caption Library</button>
+      <button onclick="switchTab('metrics')" class="tab-btn">Growth Metrics</button>
+      <button onclick="switchTab('notion')" class="tab-btn">Notion</button>
+    </nav>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 p-8">
+
+    <!-- RESEARCH -->
+    <section id="research" class="tab">
+      <h1 class="serif text-3xl mb-2">Content Research</h1>
+      <p class="text-gray-400 mb-6">Generate content ideas</p>
+
+      <button onclick="generateIdeas()" class="bg-[#C9A96E] text-black px-5 py-2 rounded-full font-semibold">
+        Generate Ideas
+      </button>
+
+      <div id="ideas" class="grid grid-cols-3 gap-4 mt-6"></div>
+    </section>
+
+    <!-- CAPTIONS -->
+    <section id="captions" class="tab hidden">
+      <h1 class="serif text-3xl mb-4">Caption Library</h1>
+
+      <input id="captionInput" placeholder="Write caption..."
+        class="w-full p-3 rounded bg-[#0C1A28] border border-[#1A2A3A] mb-3" />
+
+      <button onclick="saveCaption()" class="bg-[#C9A96E] text-black px-4 py-2 rounded-full">
+        Save Caption
+      </button>
+
+      <div id="captionList" class="mt-6 space-y-3"></div>
+    </section>
+
+    <!-- METRICS -->
+    <section id="metrics" class="tab hidden">
+      <h1 class="serif text-3xl mb-6">Growth Metrics</h1>
+
+      <div class="grid grid-cols-4 gap-4">
+        <input placeholder="Posts/week" id="posts" class="metric-input">
+        <input placeholder="Leads" id="leads" class="metric-input">
+        <input placeholder="DMs" id="dms" class="metric-input">
+        <input placeholder="Followers" id="followers" class="metric-input">
+      </div>
+
+      <button onclick="saveMetrics()" class="mt-4 bg-[#C9A96E] text-black px-4 py-2 rounded-full">
+        Save Metrics
+      </button>
+    </section>
+
+    <!-- NOTION -->
+    <section id="notion" class="tab hidden">
+      <h1 class="serif text-3xl mb-4">Notion Integration</h1>
+
+      <input id="notionUrl" placeholder="Paste Notion URL"
+        class="w-full p-3 rounded bg-[#0C1A28] border border-[#1A2A3A]" />
+
+      <button onclick="saveNotion()" class="mt-3 bg-[#C9A96E] text-black px-4 py-2 rounded-full">
+        Save
+      </button>
+
+      <div id="notionLink" class="mt-4"></div>
+    </section>
+
+  </main>
+</div>
+
+<style>
+.tab-btn {
+  padding: 10px;
+  border-radius: 8px;
+  text-align: left;
+  color: #4A6070;
+}
+.tab-btn:hover {
+  background: #1A2A3A;
+}
+.metric-input {
+  background:#0C1A28;
+  border:1px solid #1A2A3A;
+  padding:10px;
+  border-radius:8px;
+}
+</style>
+
+<script>
+
+/* TAB SWITCH */
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
 }
 
-/* ═══════════════════════════════════════════════
-   TAB 2 — CAPTION LIBRARY
-═══════════════════════════════════════════════ */
-function CaptionsTab({captions,setCaptions}){
-  const [showForm,setShowForm]   = useState(false);
-  const [editing,setEditing]     = useState(null);
-  const [pillarFilter,setPillarFilter] = useState("all");
-  const [statusFilter,setStatusFilter] = useState("all");
-  const [generating,setGenerating] = useState(null);
-  const [copiedId,setCopiedId]   = useState(null);
-  const [previewId,setPreviewId] = useState(null);
-  const [form,setForm] = useState({title:"",pillar:"decode",format:"Carousel",status:"Draft",caption:"",hashtags:"",notes:""});
-
-  function resetForm(){ setForm({title:"",pillar:"decode",format:"Carousel",status:"Draft",caption:"",hashtags:"",notes:""}); setEditing(null); }
-
-  function saveCaption(){
-    const entry={...form,id:editing||Date.now(),date:TODAY,hashtags:form.hashtags.split(",").map(h=>h.trim()).filter(Boolean)};
-    if(editing){ setCaptions(prev=>prev.map(c=>c.id===editing?entry:c)); }
-    else { setCaptions(prev=>[entry,...prev]); }
-    resetForm(); setShowForm(false);
-  }
-
-  function startEdit(c){
-    setForm({title:c.title||"",pillar:c.pillar||"decode",format:c.format||"Carousel",status:c.status||"Draft",caption:c.caption||"",hashtags:(c.hashtags||[]).join(", "),notes:c.notes||""});
-    setEditing(c.id); setShowForm(true);
-  }
-
-  async function generateFromTitle(id){
-    const c=captions.find(x=>x.id===id); if(!c) return;
-    setGenerating(id);
-    const p=PILLARS.find(x=>x.id===c.pillar);
-    const prompt=`Write an Instagram caption for a Brand & Business Strategist.
-Pillar: ${p?.label} (Goal: ${p?.goal})
-Format: ${c.format}
-Topic/Hook: ${c.title}
-
-Write: hook line → 3-4 short paragraphs → natural CTA. Direct, authoritative, relatable. Under 280 words. Return ONLY the caption text.`;
-    const cap=await claude(prompt);
-    setCaptions(prev=>prev.map(x=>x.id===id?{...x,caption:cap}:x));
-    setGenerating(null);
-  }
-
-  function copyCaption(c,id){
-    const full=`${c.caption}\n\n${(c.hashtags||[]).map(h=>"#"+h).join(" ")}`;
-    navigator.clipboard.writeText(full).catch(()=>{});
-    setCopiedId(id); setTimeout(()=>setCopiedId(null),1800);
-  }
-
-  function updateStatus(id,status){ setCaptions(prev=>prev.map(c=>c.id===id?{...c,status}:c)); }
-  function deleteCaption(id){ setCaptions(prev=>prev.filter(c=>c.id!==id)); }
-
-  const filtered=captions.filter(c=>
-    (pillarFilter==="all"||c.pillar===pillarFilter)&&
-    (statusFilter==="all"||c.status===statusFilter)
-  );
-
-  return(
-    <div style={css.page}>
-      <div style={css.pageTop}>
-        <div>
-          <div style={css.eyebrow}>Hook &amp; Caption Vault</div>
-          <h1 style={css.h1}>Caption <em style={{color:"#C9A96E",fontStyle:"italic"}}>Library</em></h1>
-          <p style={css.pageDesc}>Every hook, draft, and finished caption in one place. Generate with AI or write your own.</p>
-        </div>
-        <button onClick={()=>{resetForm();setShowForm(!showForm);}} style={css.goldBtn}>
-          <Ico d={ICONS.plus} size={14} stroke="#0B1520"/> New Caption
-        </button>
-      </div>
-
-      {/* Form */}
-      {showForm && (
-        <div style={{...css.formCard,animation:"fadeIn .2s ease"}}>
-          <div style={css.formGrid2}>
-            <div style={css.formGroup}>
-              <label style={css.label}>Hook / Title</label>
-              <input style={css.input} placeholder="The first line that stops the scroll…"
-                value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
-            </div>
-            <div style={css.formGroup}>
-              <label style={css.label}>Pillar</label>
-              <select style={css.input} value={form.pillar} onChange={e=>setForm(f=>({...f,pillar:e.target.value}))}>
-                {PILLARS.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
-              </select>
-            </div>
-            <div style={css.formGroup}>
-              <label style={css.label}>Format</label>
-              <select style={css.input} value={form.format} onChange={e=>setForm(f=>({...f,format:e.target.value}))}>
-                {FORMATS.map(f=><option key={f}>{f}</option>)}
-              </select>
-            </div>
-            <div style={css.formGroup}>
-              <label style={css.label}>Status</label>
-              <select style={css.input} value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
-                {STATUSES.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={css.formGroup}>
-            <label style={css.label}>Caption</label>
-            <textarea style={{...css.input,minHeight:120,resize:"vertical",lineHeight:1.6}}
-              placeholder="Write your caption here — or leave blank and hit AI Generate below…"
-              value={form.caption} onChange={e=>setForm(f=>({...f,caption:e.target.value}))}/>
-          </div>
-          <div style={css.formGroup}>
-            <label style={css.label}>Hashtags (comma separated)</label>
-            <input style={css.input} placeholder="brandstrategy, positioningexpert, brandidentity…"
-              value={form.hashtags} onChange={e=>setForm(f=>({...f,hashtags:e.target.value}))}/>
-          </div>
-          <div style={css.formGroup}>
-            <label style={css.label}>Notes / Visual Direction</label>
-            <input style={css.input} placeholder="Reel hook visual, carousel layout notes…"
-              value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
-          </div>
-          <div style={{display:"flex",gap:10,marginTop:8}}>
-            <button onClick={saveCaption} style={css.goldBtn}>
-              <Ico d={ICONS.check} size={13} stroke="#0B1520"/> {editing?"Update":"Save"}
-            </button>
-            <button onClick={()=>{setShowForm(false);resetForm();}} style={css.ghostBtn}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
-        <span style={css.filterLabel}>Pillar:</span>
-        {["all",...PILLARS.map(p=>p.id)].map(f=>{
-          const p=PILLARS.find(x=>x.id===f);
-          return(
-            <button key={f} onClick={()=>setPillarFilter(f)}
-              style={{...css.chip,...(pillarFilter===f?{background:p?.col||"#C9A96E",color:"#0B1520",borderColor:"transparent"}:{})}}>
-              {p?`${p.icon} ${p.short}`:"All"}
-            </button>
-          );
-        })}
-        <span style={{...css.filterLabel,marginLeft:8}}>Status:</span>
-        {["all",...STATUSES].map(s=>(
-          <button key={s} onClick={()=>setStatusFilter(s)}
-            style={{...css.chip,...(statusFilter===s?{background:"#C9A96E",color:"#0B1520",borderColor:"transparent"}:{})}}>
-            {s==="all"?"All":s}
-          </button>
-        ))}
-      </div>
-
-      {/* Stats row */}
-      <div style={css.statsRow}>
-        {STATUSES.map(s=>{
-          const cnt=captions.filter(c=>c.status===s).length;
-          return(
-            <div key={s} style={css.statChip}>
-              <span style={{...css.statDot,...statusDot(s)}}/>
-              <span style={{fontSize:12,color:"#6A8090"}}>{s}</span>
-              <span style={{fontSize:14,fontWeight:600,color:"#C0B090",fontFamily:"Georgia,serif"}}>{cnt}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Caption cards */}
-      {filtered.length===0 && (
-        <div style={css.emptyState}>
-          <div style={{fontSize:40,marginBottom:12}}>✍️</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:18,color:"#C9A96E",marginBottom:8}}>No captions yet</div>
-          <p style={{color:"#3A5060",fontSize:13,maxWidth:320,lineHeight:1.6}}>Add your first caption above, or generate ideas in the Research tab and convert them here.</p>
-        </div>
-      )}
-
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        {filtered.map(c=>{
-          const p=PILLARS.find(x=>x.id===c.pillar);
-          const isPreview=previewId===c.id;
-          return(
-            <div key={c.id} className="card-hover"
-              style={{...css.captionCard,borderLeftColor:p?.col||"#C9A96E"}}>
-              <div style={css.captionCardTop}>
-                <div style={{flex:1}}>
-                  <div style={css.captionTitle}>{c.title||"Untitled"}</div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
-                    <span style={{...css.pillarTag,background:p?.col+"22",color:p?.col}}>{p?.icon} {p?.short}</span>
-                    <span style={css.fmtTag}>{c.format}</span>
-                    <select value={c.status} onChange={e=>updateStatus(c.id,e.target.value)}
-                      style={{...statusSelect(c.status),fontSize:10,fontFamily:"'DM Sans',sans-serif",border:"none",cursor:"pointer",borderRadius:10,padding:"2px 8px",fontWeight:600}}>
-                      {STATUSES.map(s=><option key={s}>{s}</option>)}
-                    </select>
-                    <span style={{fontSize:11,color:"#2A4050"}}>{c.date}</span>
-                    {c.fromResearch && <span style={{fontSize:10,color:"#C9A96E80",padding:"2px 6px",border:"1px solid #C9A96E30",borderRadius:8}}>from Research</span>}
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:6,alignItems:"flex-start"}}>
-                  <button onClick={()=>generateFromTitle(c.id)} disabled={generating===c.id}
-                    style={{...css.iconBtn,color:"#C9A96E"}} title="AI Generate Caption">
-                    {generating===c.id?<span style={css.spinnerSm}/>:<Ico d={ICONS.spark} size={13} stroke="#C9A96E"/>}
-                  </button>
-                  <button onClick={()=>setPreviewId(isPreview?null:c.id)} style={css.iconBtn}>
-                    <Ico d={ICONS.eye} size={13} stroke="#4A6070"/>
-                  </button>
-                  <button onClick={()=>copyCaption(c,c.id)} style={{...css.iconBtn,color:copiedId===c.id?"#7B9E87":"#4A6070"}}>
-                    <Ico d={copiedId===c.id?ICONS.check:ICONS.copy} size={13} stroke={copiedId===c.id?"#7B9E87":"#4A6070"}/>
-                  </button>
-                  <button onClick={()=>startEdit(c)} style={css.iconBtn}>
-                    <Ico d={ICONS.edit} size={13} stroke="#4A6070"/>
-                  </button>
-                  <button onClick={()=>deleteCaption(c.id)} style={{...css.iconBtn,color:"#5A2A2A"}}>
-                    <Ico d={ICONS.trash} size={13} stroke="#5A2A2A"/>
-                  </button>
-                </div>
-              </div>
-
-              {/* Caption preview */}
-              {isPreview && c.caption && (
-                <div style={{...css.captionBody,animation:"fadeIn .15s ease"}}>
-                  <div style={css.captionText}>{c.caption}</div>
-                  {c.hashtags?.length>0 && (
-                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:10}}>
-                      {c.hashtags.map((h,i)=><span key={i} style={css.hashTag}>#{h}</span>)}
-                    </div>
-                  )}
-                  {c.notes && <div style={{fontSize:11,color:"#2A4050",marginTop:8}}>📌 {c.notes}</div>}
-                </div>
-              )}
-              {!isPreview && c.caption && (
-                <div style={{fontSize:12,color:"#3A5060",marginTop:8,lineHeight:1.5,padding:"0 0 4px"}}>
-                  {c.caption.slice(0,120)}{c.caption.length>120?"…":""}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+/* STORAGE */
+function save(key,data){
+  localStorage.setItem(key, JSON.stringify(data));
+}
+function load(key){
+  return JSON.parse(localStorage.getItem(key) || "[]");
 }
 
-/* ═══════════════════════════════════════════════
-   TAB 3 — GROWTH METRICS
-═══════════════════════════════════════════════ */
-function MetricsTab({metrics,setMetrics}){
-  const week=getWeekKey();
-  const weeks=getPrevWeeks(6);
-  const wm=metrics[week]||{};
-  const [insightLoading,setInsightLoading]=useState(false);
-  const [insight,setInsight]=useState("");
-
-  function set(key,val){ setMetrics(prev=>({...prev,[week]:{...(prev[week]||{}),[key]:Number(val)}})); }
-
-  async function getInsight(){
-    setInsightLoading(true);
-    const data=METRICS_DEF.map(m=>`${m.label}: ${wm[m.key]||0}${m.unit} (target ${m.target}${m.unit})`).join("\n");
-    const prompt=`You are a social media strategist reviewing a Brand & Business Strategist's Instagram metrics.
-
-This week's numbers:
-${data}
-
-Give 3 specific, actionable insights in 2-3 sentences each:
-1. What's working and why
-2. The biggest gap and what's likely causing it
-3. One specific action to take this week
-
-Be direct, strategic, no fluff. Format as plain text with numbered points.`;
-    const r=await claude(prompt);
-    setInsight(r); setInsightLoading(false);
-  }
-
-  const totalScore=METRICS_DEF.reduce((sum,m)=>{
-    const val=wm[m.key]||0;
-    return sum+Math.min(val/m.target,1);
-  },0);
-  const score=Math.round((totalScore/METRICS_DEF.length)*100);
-
-  return(
-    <div style={css.page}>
-      <div style={css.pageTop}>
-        <div>
-          <div style={css.eyebrow}>Week of {week}</div>
-          <h1 style={css.h1}>Growth <em style={{color:"#C9A96E",fontStyle:"italic"}}>Metrics</em></h1>
-          <p style={css.pageDesc}>Track what actually builds your business — not vanity numbers. Update weekly on Fridays.</p>
-        </div>
-        <div style={{textAlign:"center"}}>
-          <div style={css.scoreDial}>
-            <div style={css.scoreNum}>{score}</div>
-            <div style={css.scoreLbl}>score</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Metric input grid */}
-      <div style={css.metricGrid}>
-        {METRICS_DEF.map(m=>{
-          const val=wm[m.key]||0;
-          const pct=Math.min((val/m.target)*100,100);
-          const hit=pct>=100;
-          return(
-            <div key={m.key} style={{...css.metricCard,borderTopColor:hit?"#7B9E87":"#C9A96E"}}>
-              <div style={css.metricIcon}>{m.icon}</div>
-              <div style={css.metricLabel}>{m.label}</div>
-              <div style={css.metricTarget}>Target: <strong style={{color:"#C9A96E"}}>{m.target}{m.unit}</strong></div>
-              <input type="number" min="0" value={val||""} placeholder="0"
-                onChange={e=>set(m.key,e.target.value)}
-                style={css.metricInput}/>
-              <div style={css.miniBar}>
-                <div style={{...css.miniBarFill,width:`${pct}%`,background:hit?"#7B9E87":"#C9A96E"}}/>
-              </div>
-              <div style={{fontSize:10.5,color:hit?"#7B9E87":pct>60?"#C9A96E":"#5A4040",marginTop:5,fontWeight:600}}>
-                {hit?"✓ Hit":""}
-                {!hit&&pct>0?`${Math.round(pct)}%`:""}
-                {!hit&&pct===0?"Not tracked yet":""}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* AI Insight */}
-      <div style={css.insightCard}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div>
-            <div style={css.sectionLabel}>AI Strategy Insight</div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#C0B090"}}>What your numbers are telling you</div>
-          </div>
-          <button onClick={getInsight} disabled={insightLoading} style={css.goldBtn}>
-            {insightLoading?<span style={css.spinner}/>:<Ico d={ICONS.spark} size={13} stroke="#0B1520"/>}
-            {insightLoading?"Analysing…":"Analyse This Week"}
-          </button>
-        </div>
-        {insight?(
-          <div style={css.insightText}>{insight}</div>
-        ):(
-          <div style={css.insightPlaceholder}>Hit "Analyse This Week" and Claude will review your numbers and give you 3 specific strategic actions for next week.</div>
-        )}
-      </div>
-
-      {/* 6-week history table */}
-      <div style={css.historyCard}>
-        <div style={{...css.sectionLabel,marginBottom:14}}>6-Week History</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
-              <tr>
-                <th style={css.th}>Week</th>
-                {METRICS_DEF.map(m=><th key={m.key} style={css.th}>{m.icon} {m.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map(w=>(
-                <tr key={w} style={w===week?{background:"#C9A96E08"}:{}}>
-                  <td style={{...css.td,color:w===week?"#C9A96E":"#3A5060",fontWeight:w===week?600:400}}>{w}{w===week?" ●":""}</td>
-                  {METRICS_DEF.map(m=>{
-                    const v=(metrics[w]||{})[m.key]||0;
-                    const hit=v>=m.target;
-                    return<td key={m.key} style={{...css.td,color:hit?"#7B9E87":v>0?"#C0B090":"#2A3A48"}}>{v||"—"}{m.unit}</td>;
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Friday review */}
-      <div style={css.reviewCard}>
-        <div style={css.sectionLabel}>The Friday 10-Minute Review</div>
-        <div style={{fontFamily:"Georgia,serif",fontSize:15,color:"#C0B090",marginBottom:14}}>4 numbers that tell you the truth</div>
-        {[
-          {q:"Top post by saves",h:"Recreate this format — it's what your audience values."},
-          {q:"Profile visits",h:"High visits + low DMs? Your bio CTA needs work."},
-          {q:"Link clicks",h:"Low clicks mean your offer isn't landing yet."},
-          {q:"DMs received",h:"DMs are your pipeline. If this is low, content isn't creating conversations."},
-        ].map(({q,h})=>(
-          <div key={q} style={css.reviewRow}>
-            <div style={{fontSize:13,fontWeight:600,color:"#C0B090",marginBottom:3}}>{q}</div>
-            <div style={{fontSize:12,color:"#3A5060",lineHeight:1.5}}>{h}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   TAB 4 — NOTION INTEGRATION
-═══════════════════════════════════════════════ */
-function NotionTab({cfg,setCfg}){
-  const [url,setUrl]   = useState(cfg.url||"");
-  const [label,setLabel] = useState(cfg.label||"");
-  const [embed,setEmbed] = useState(cfg.embedPage||"");
-  const [saved,setSaved] = useState(false);
-
-  function save(){
-    setCfg({url,label,embedPage:embed});
-    setSaved(true); setTimeout(()=>setSaved(false),2000);
-  }
-
-  // Convert notion URL to embed-safe format
-  const embedUrl = embed
-    ? embed.includes("notion.so")
-      ? embed.replace("notion.so","notion.so").replace(/\?.*$/,"")+"?pvs=4"
-      : embed
-    : "";
-
-  return(
-    <div style={css.page}>
-      <div style={css.pageTop}>
-        <div>
-          <div style={css.eyebrow}>Workspace Integration</div>
-          <h1 style={css.h1}>Notion <em style={{color:"#C9A96E",fontStyle:"italic"}}>Connection</em></h1>
-          <p style={css.pageDesc}>Link your Notion board directly inside this dashboard. Add your content calendar, strategy doc, or client tracker.</p>
-        </div>
-      </div>
-
-      {/* Config */}
-      <div style={css.notionConfigCard}>
-        <div style={css.sectionLabel}>Board Links</div>
-        <div style={css.formGrid2}>
-          <div style={css.formGroup}>
-            <label style={css.label}>Notion Board Label</label>
-            <input style={css.input} placeholder="e.g. Content Calendar, Strategy Board…"
-              value={label} onChange={e=>setLabel(e.target.value)}/>
-          </div>
-          <div style={css.formGroup}>
-            <label style={css.label}>Notion Board URL</label>
-            <input style={css.input} placeholder="https://notion.so/your-page-id"
-              value={url} onChange={e=>setUrl(e.target.value)}/>
-          </div>
-        </div>
-        <div style={css.formGroup}>
-          <label style={css.label}>Page to Embed (Notion page URL)</label>
-          <input style={css.input}
-            placeholder="Paste a Notion page URL to embed it below — must be publicly shared…"
-            value={embed} onChange={e=>setEmbed(e.target.value)}/>
-          <div style={{fontSize:11,color:"#2A4050",marginTop:5,lineHeight:1.6}}>
-            ⚠️ To embed a Notion page, open it in Notion → Share → "Share to web" → enable → copy link and paste above.
-          </div>
-        </div>
-        <div style={{display:"flex",gap:10,alignItems:"center",marginTop:8}}>
-          <button onClick={save} style={css.goldBtn}>
-            {saved?<><Ico d={ICONS.check} size={13} stroke="#0B1520"/> Saved!</>:<><Ico d={ICONS.link} size={13} stroke="#0B1520"/> Save Settings</>}
-          </button>
-          {cfg.url && (
-            <a href={cfg.url} target="_blank" rel="noreferrer" style={css.outlineBtn}>
-              <Ico d={ICONS.notion} size={13} stroke="#C9A96E"/> Open {cfg.label||"Notion"} ↗
-            </a>
-          )}
-        </div>
-      </div>
-
-      {/* Quick links */}
-      <div style={css.notionLinksGrid}>
-        {[
-          {title:"30-Day Strategy Plan",hint:"Your full content plan from the PDF",icon:"📋"},
-          {title:"Content Calendar",hint:"Weekly posting schedule",icon:"📅"},
-          {title:"Caption Vault",hint:"All your drafts and posts",icon:"✍️"},
-          {title:"Client Tracker",hint:"Project and client management",icon:"👥"},
-        ].map(({title,hint,icon})=>(
-          <div key={title} style={css.notionLinkCard}>
-            <div style={{fontSize:24,marginBottom:10}}>{icon}</div>
-            <div style={{fontSize:13,fontWeight:600,color:"#C0B090",marginBottom:4}}>{title}</div>
-            <div style={{fontSize:11.5,color:"#3A5060",lineHeight:1.5,marginBottom:12}}>{hint}</div>
-            <input style={{...css.input,fontSize:11,padding:"6px 10px"}}
-              placeholder="Paste Notion page URL…"/>
-          </div>
-        ))}
-      </div>
-
-      {/* Embed */}
-      {embedUrl && (
-        <div style={css.embedSection}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:17,color:"#C0B090"}}>{cfg.label||"Notion Board"}</div>
-            <a href={cfg.url||embedUrl} target="_blank" rel="noreferrer" style={css.outlineBtn}>
-              Open full page ↗
-            </a>
-          </div>
-          <iframe
-            src={embedUrl}
-            style={css.embedFrame}
-            frameBorder="0"
-            title="Notion Board"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-          />
-        </div>
-      )}
-
-      {!embedUrl && (
-        <div style={{...css.emptyState,marginTop:32}}>
-          <div style={{fontSize:40,marginBottom:12}}>📋</div>
-          <div style={{fontFamily:"Georgia,serif",fontSize:18,color:"#C9A96E",marginBottom:8}}>No page embedded yet</div>
-          <p style={{color:"#3A5060",fontSize:13,maxWidth:380,lineHeight:1.7}}>
-            Share a Notion page to the web, paste its URL above, and it'll appear here as an embedded workspace — no switching tabs needed.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Helper funcs ─── */
-function diffStyle(d){
-  return d==="Easy"?{background:"#7B9E8722",color:"#7B9E87"}:
-         d==="Deep"?{background:"#6B8FC422",color:"#6B8FC4"}:
-         {background:"#C9A96E22",color:"#C9A96E"};
-}
-function statusDot(s){
-  return {Idea:{background:"#2A4050"},Draft:{background:"#C9A96E"},Scheduled:{background:"#6B8FC4"},Posted:{background:"#7B9E87"}}[s]||{};
-}
-function statusSelect(s){
-  return {Idea:{background:"#1A2A3A",color:"#4A6070"},Draft:{background:"#C9A96E22",color:"#C9A96E"},Scheduled:{background:"#6B8FC422",color:"#6B8FC4"},Posted:{background:"#7B9E8722",color:"#7B9E87"}}[s]||{};
-}
-
-/* ─── Styles ─── */
-const css={
-  shell:{display:"flex",minHeight:"100vh",background:"#0B1520",fontFamily:"'DM Sans',sans-serif",color:"#E8E0D0"},
-  sidebar:{width:210,background:"#0C1A28",borderRight:"1px solid #1A2A3A",display:"flex",flexDirection:"column",gap:0,position:"sticky",top:0,height:"100vh",overflow:"hidden"},
-  logoBlock:{padding:"22px 16px 18px",borderBottom:"1px solid #1A2A3A",display:"flex",alignItems:"center",gap:10},
-  logoMark:{width:34,height:34,borderRadius:"50%",background:"#C9A96E",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0},
-  logoName:{fontSize:12.5,fontWeight:700,color:"#C0B090",letterSpacing:.3},
-  logoSub:{fontSize:10,color:"#3A5060",marginTop:1},
-  navBtn:{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",borderRadius:8,border:"none",background:"transparent",color:"#3A5060",cursor:"pointer",fontSize:12.5,fontWeight:500,fontFamily:"'DM Sans',sans-serif",textAlign:"left",width:"100%",transition:"all .15s"},
-  navActive:{background:"#C9A96E18",color:"#C9A96E"},
-  pillarLegend:{padding:"16px",borderTop:"1px solid #1A2A3A",marginTop:"auto",flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end"},
-  sectionLabel:{fontSize:9,fontWeight:700,letterSpacing:2.5,textTransform:"uppercase",color:"#2A4050",marginBottom:8,display:"block"},
-  legendRow:{display:"flex",alignItems:"center",gap:7,marginBottom:5},
-  legendDot:{width:6,height:6,borderRadius:"50%",flexShrink:0},
-  legendName:{fontSize:11,color:"#4A6070",flex:1},
-  legendPct:{fontSize:10,fontWeight:600},
-  notionQuickLink:{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"#C9A96E",textDecoration:"none",padding:"8px 12px",background:"#C9A96E10",borderRadius:8,border:"1px solid #C9A96E25"},
-  main:{flex:1,padding:"32px 40px",overflowY:"auto",maxHeight:"100vh"},
-  page:{maxWidth:960,margin:"0 auto"},
-  pageTop:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:28,gap:20},
-  eyebrow:{fontSize:9.5,fontWeight:700,letterSpacing:2.5,textTransform:"uppercase",color:"#C9A96E60",marginBottom:6,display:"block"},
-  h1:{fontFamily:"'Cormorant Garamond',Georgia,serif",fontSize:32,fontWeight:700,color:"#E8E0D0",lineHeight:1.1,margin:0},
-  pageDesc:{fontSize:13,color:"#3A5060",marginTop:6,lineHeight:1.6},
-  goldBtn:{display:"flex",alignItems:"center",gap:7,padding:"10px 20px",background:"#C9A96E",color:"#0B1520",border:"none",borderRadius:24,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",flexShrink:0},
-  ghostBtn:{display:"flex",alignItems:"center",gap:7,padding:"10px 18px",background:"transparent",color:"#4A6070",border:"1px solid #1A2A3A",borderRadius:24,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"},
-  outlineBtn:{display:"flex",alignItems:"center",gap:7,padding:"8px 16px",background:"transparent",color:"#C9A96E",border:"1px solid #C9A96E30",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",textDecoration:"none"},
-  iconBtn:{display:"flex",alignItems:"center",justifyContent:"center",width:28,height:28,background:"transparent",border:"1px solid #1A2A3A",borderRadius:6,cursor:"pointer",transition:"all .15s"},
-  input:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:8,padding:"9px 13px",fontSize:13,color:"#C0B090",fontFamily:"'DM Sans',sans-serif",outline:"none",width:"100%",boxSizing:"border-box",transition:"border-color .2s"},
-  chip:{fontSize:11,fontWeight:600,padding:"5px 11px",borderRadius:20,border:"1px solid #1A2A3A",background:"transparent",color:"#3A5060",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",transition:"all .15s"},
-  filterLabel:{fontSize:11,color:"#2A4050",alignSelf:"center",whiteSpace:"nowrap"},
-  pillarTag:{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:10,letterSpacing:.3},
-  fmtTag:{fontSize:10,fontWeight:600,padding:"3px 9px",borderRadius:10,background:"#1A2A3A",color:"#3A5060",border:"1px solid #1E2E3E"},
-  diffTag:{fontSize:10,fontWeight:600,padding:"3px 9px",borderRadius:10},
-  hashTag:{fontSize:10,color:"#C9A96E80",padding:"3px 8px",background:"#C9A96E0A",borderRadius:8,border:"1px solid #C9A96E15"},
-  shimmerGrid:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:20},
-  shimmerCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:12,padding:"18px",animation:"pulse 1.5s infinite"},
-  shimmerLine:{height:10,background:"#1A2A3A",borderRadius:6},
-  emptyState:{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"60px 20px",color:"#2A4050"},
-  ideaGrid:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14},
-  ideaCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderTop:"2.5px solid #C9A96E",borderRadius:12,padding:"16px 18px",transition:"all .2s",cursor:"default"},
-  hookText:{fontFamily:"'Cormorant Garamond',Georgia,serif",fontSize:16,color:"#C0B090",lineHeight:1.45,fontStyle:"italic",marginBottom:10,lineClamp:3},
-  expandToggle:{fontSize:11,color:"#C9A96E70",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"'DM Sans',sans-serif",display:"block"},
-  expandBody:{padding:"14px 0 0",borderTop:"1px solid #1A2A3A",marginTop:12},
-  expandSection:{marginBottom:12},
-  angleRow:{display:"flex",marginBottom:5,alignItems:"flex-start"},
-  captionOpenerBox:{fontFamily:"'Cormorant Garamond',Georgia,serif",fontSize:14,fontStyle:"italic",color:"#C9A96E80",lineHeight:1.5,padding:"10px 12px",background:"#08121C",borderRadius:8,borderLeft:"2px solid #C9A96E30"},
-  formCard:{background:"#0C1A28",border:"1px solid #C9A96E30",borderRadius:14,padding:"24px",marginBottom:24},
-  formGrid2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14},
-  formGroup:{display:"flex",flexDirection:"column",gap:6,marginBottom:14},
-  label:{fontSize:9.5,fontWeight:700,letterSpacing:2,textTransform:"uppercase",color:"#2A4050"},
-  statsRow:{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"},
-  statChip:{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:10},
-  statDot:{width:7,height:7,borderRadius:"50%"},
-  captionCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderLeft:"3px solid #C9A96E",borderRadius:12,padding:"16px 18px",transition:"all .2s"},
-  captionCardTop:{display:"flex",alignItems:"flex-start",gap:14},
-  captionTitle:{fontFamily:"'Cormorant Garamond',Georgia,serif",fontSize:17,color:"#C0B090",fontWeight:600,lineHeight:1.2},
-  captionBody:{marginTop:14,padding:"14px",background:"#08121C",borderRadius:10,borderLeft:"2px solid #C9A96E30"},
-  captionText:{fontSize:13,color:"#8A9AA8",lineHeight:1.75,whiteSpace:"pre-wrap"},
-  scoreDial:{width:80,height:80,borderRadius:"50%",border:"2px solid #C9A96E30",background:"linear-gradient(135deg,#0C1A28,#1A2A3A)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",boxShadow:"0 0 30px #C9A96E15"},
-  scoreNum:{fontFamily:"'Cormorant Garamond',Georgia,serif",fontSize:26,fontWeight:700,color:"#C9A96E",lineHeight:1},
-  scoreLbl:{fontSize:9,fontWeight:700,letterSpacing:2,textTransform:"uppercase",color:"#C9A96E60"},
-  metricGrid:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20},
-  metricCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderTop:"2.5px solid #C9A96E",borderRadius:12,padding:"16px",textAlign:"center"},
-  metricIcon:{fontSize:22,marginBottom:6},
-  metricLabel:{fontSize:12,fontWeight:600,color:"#8A9AA8",marginBottom:4},
-  metricTarget:{fontSize:10.5,color:"#2A4050",marginBottom:10},
-  metricInput:{width:"100%",background:"#08121C",border:"1px solid #1A2A3A",borderRadius:8,padding:"8px",fontSize:22,fontWeight:700,color:"#C9A96E",fontFamily:"'Cormorant Garamond',Georgia,serif",outline:"none",marginBottom:8,textAlign:"center",boxSizing:"border-box"},
-  miniBar:{height:3,background:"#1A2A3A",borderRadius:2,overflow:"hidden"},
-  miniBarFill:{height:"100%",borderRadius:2,transition:"width .4s"},
-  insightCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:14,padding:"22px",marginBottom:16},
-  insightText:{fontSize:13.5,color:"#8A9AA8",lineHeight:1.8,whiteSpace:"pre-wrap",padding:"14px",background:"#08121C",borderRadius:10,borderLeft:"2px solid #C9A96E30"},
-  insightPlaceholder:{fontSize:13,color:"#2A4050",lineHeight:1.6,padding:"14px",background:"#08121C",borderRadius:10,fontStyle:"italic"},
-  historyCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:14,padding:"22px",marginBottom:16},
-  reviewCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:14,padding:"22px",marginBottom:16},
-  reviewRow:{padding:"10px 0",borderBottom:"1px solid #0F1E2E"},
-  th:{fontSize:9.5,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",color:"#2A4050",padding:"8px 12px",textAlign:"left",borderBottom:"1px solid #1A2A3A"},
-  td:{fontSize:12,color:"#3A5060",padding:"9px 12px",borderBottom:"1px solid #0F1E2E"},
-  notionConfigCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:14,padding:"24px",marginBottom:20},
-  notionLinksGrid:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24},
-  notionLinkCard:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:12,padding:"20px"},
-  embedSection:{background:"#0C1A28",border:"1px solid #1A2A3A",borderRadius:14,padding:"20px"},
-  embedFrame:{width:"100%",height:600,borderRadius:10,border:"1px solid #1A2A3A",background:"#fff"},
-  spinner:{display:"inline-block",width:14,height:14,border:"2px solid #0B152080",borderTop:"2px solid #0B1520",borderRadius:"50%",animation:"spin .7s linear infinite"},
-  spinnerSm:{display:"inline-block",width:12,height:12,border:"1.5px solid #C9A96E30",borderTop:"1.5px solid #C9A96E",borderRadius:"50%",animation:"spin .7s linear infinite"},
-};
+/* IDEAS */
+function
